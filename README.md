@@ -59,16 +59,20 @@ npx -y @smithery/cli@latest install @hellokaton/unsplash-mcp-server --client cli
 
 **Claude Code**
 
-User scope (available across all projects):
+Add the following to your `~/.claude.json` (user scope) or `.mcp.json` in your project root (project scope):
 
-```bash
-claude mcp add --transport stdio --scope user -e UNSPLASH_ACCESS_KEY=your_access_key unsplash -- uvx --from git+https://github.com/petems/unsplash-mcp-server unsplash-mcp-server
-```
-
-Project scope (shared with your team via `.mcp.json`):
-
-```bash
-claude mcp add --transport stdio --scope project -e UNSPLASH_ACCESS_KEY=your_access_key unsplash -- uvx --from git+https://github.com/petems/unsplash-mcp-server unsplash-mcp-server
+```json
+{
+  "mcpServers": {
+    "unsplash": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/petems/unsplash-mcp-server", "unsplash-mcp-server"],
+      "env": {
+        "UNSPLASH_ACCESS_KEY": "your_access_key"
+      }
+    }
+  }
+}
 ```
 
 ### Manual Installation
