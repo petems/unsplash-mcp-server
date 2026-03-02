@@ -57,6 +57,20 @@ npx -y @smithery/cli@latest install @hellokaton/unsplash-mcp-server --client win
 npx -y @smithery/cli@latest install @hellokaton/unsplash-mcp-server --client cline --key 7558c683-****-****
 ```
 
+**Claude Code**
+
+User scope (available across all projects):
+
+```bash
+claude mcp add --transport stdio --scope user --env UNSPLASH_ACCESS_KEY=your_access_key unsplash -- uvx --from git+https://github.com/petems/unsplash-mcp-server unsplash-mcp-server
+```
+
+Project scope (shared with your team via `.mcp.json`):
+
+```bash
+claude mcp add --transport stdio --scope project --env UNSPLASH_ACCESS_KEY=your_access_key unsplash -- uvx --from git+https://github.com/petems/unsplash-mcp-server unsplash-mcp-server
+```
+
 ### Manual Installation
 
 ```bash
