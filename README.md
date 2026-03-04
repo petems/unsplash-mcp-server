@@ -1,63 +1,24 @@
-[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/hellokaton-unsplash-mcp-server-badge.png)](https://mseep.ai/app/hellokaton-unsplash-mcp-server)
-
 # Unsplash MCP Server
 
-English | [简体中文](README_zh.md)
+> A simple MCP server for searching Unsplash images.
 
-> A simple MCP server for seamless Unsplash image integration and search capabilities.
+Fork of [hellokaton/unsplash-mcp-server](https://github.com/hellokaton/unsplash-mcp-server).
 
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![smithery badge](https://smithery.ai/badge/@hellokaton/unsplash-mcp-server)](https://smithery.ai/server/@hellokaton/unsplash-mcp-server)
+## Overview
 
-## 📋 Overview
+Unsplash MCP Server provides tools for searching Unsplash's library of high-quality images. It supports filtering by keyword, color, orientation, and pagination.
 
-Unsplash MCP Server is used for searching rich, high-quality images. It's ideal for developers who want to integrate Unsplash functionality into their own applications.
-
-## ✨ Features
-
-- **Advanced Image Search**: Search Unsplash's extensive photo library with filters for:
-  - Keyword relevance
-  - Color schemes
-  - Orientation options
-  - Custom sorting and pagination
-
-## 🔑 Obtaining Unsplash Access Key
-
-Before installing this server, you'll need to obtain an Unsplash API Access Key:
+## Obtaining an Unsplash Access Key
 
 1. Create a developer account at [Unsplash](https://unsplash.com/developers)
 2. Register a new application
 3. Get your Access Key from the application details page
-4. Use this key in the configuration steps below
 
 For more details, refer to the [official Unsplash API documentation](https://unsplash.com/documentation).
 
-## 🚀 Installation
+## Installation
 
-To install Unsplash Image Integration Server for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@hellokaton/unsplash-mcp-server):
-
-### IDE Setup
-
-**Cursor IDE**
-
-```bash
-npx -y @smithery/cli@latest install @hellokaton/unsplash-mcp-server --client cursor --key 7558c683-****-****
-```
-
-**Windsurf**
-
-```bash
-npx -y @smithery/cli@latest install @hellokaton/unsplash-mcp-server --client windsurf --key 7558c683-****-****
-```
-
-**Cline**
-
-```bash
-npx -y @smithery/cli@latest install @hellokaton/unsplash-mcp-server --client cline --key 7558c683-****-****
-```
-
-**Claude Code**
+### Claude Code
 
 Add the following to your `~/.claude.json` (user scope) or `.mcp.json` in your project root (project scope):
 
@@ -78,51 +39,17 @@ Add the following to your `~/.claude.json` (user scope) or `.mcp.json` in your p
 ### Manual Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/hellokaton/unsplash-mcp-server.git
-
-# Navigate to project directory
+git clone https://github.com/petems/unsplash-mcp-server.git
 cd unsplash-mcp-server
-
-# Create virtual environment
 uv venv
-
-# Install dependencies
 uv pip install .
 ```
 
-**Cursor Editor Integration**
+## Available Tools
 
-Add the following configuration to your Cursor editor's `settings.json`:
+### search_photos
 
-⚠️ **Note:** Please adjust the following configuration according to your actual installation:
-
-- If `uv` is not in your system PATH, use an absolute path (e.g., `/path/to/uv`)
-- `./server.py` should be modified to the actual location of your server script (can use absolute path or path relative to workspace)
-
-<img src="screenshots/Snipaste_1.png" alt="Cursor Configuration Screenshot" />
-
-```json
-{
-  "mcpServers": {
-    "unsplash": {
-      "command": "uv",
-      "args": ["run", "--with", "fastmcp", "fastmcp", "run", "./server.py"],
-      "env": {
-        "UNSPLASH_ACCESS_KEY": "${YOUR_ACCESS_KEY}"
-      }
-    }
-  }
-}
-```
-
-### Using in Cursor
-
-<img src="screenshots/Snipaste_2.png" alt="Unsplash MCP in Cursor" />
-
-## 🛠️ Available Tools
-
-### Search Photos
+Search Unsplash's photo library with optional filters.
 
 ```json
 {
@@ -133,16 +60,6 @@ Add the following configuration to your Cursor editor's `settings.json`:
 }
 ```
 
-## 🔄 Other Implementations
-
-- Golang: [unsplash-mcp-server](https://github.com/douglarek/unsplash-mcp-server)
-- Java: [unsplash-mcp-server](https://github.com/JavaProgrammerLB/unsplash-mcp-server)
-
-## 📄 License
+## License
 
 [MIT License](LICENSE)
-
-## 📬 Contact
-
-- [Twitter/X](https://x.com/hellokaton)
-- [GitHub Issues](https://github.com/hellokaton/unsplash-mcp-server/issues)
