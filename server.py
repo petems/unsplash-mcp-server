@@ -140,6 +140,7 @@ async def download_photo(
     photo_id: str,
     save_path: str,
     size: str = "regular",
+    create_directories: bool = False,
 ) -> str:
     """
     Download an Unsplash photo by ID and save it to a local file.
@@ -148,6 +149,7 @@ async def download_photo(
         photo_id: The Unsplash photo ID (from search results)
         save_path: Absolute file path where the image will be saved
         size: Image size variant (raw, full, regular, small, thumb)
+        create_directories: If True, create parent directories if they don't exist
 
     Returns:
         str: Confirmation message with photo ID, size, path, and byte count
@@ -160,13 +162,27 @@ async def download_photo(
     path = Path(save_path)
     if not path.is_absolute():
         raise ValueError(f"save_path must be absolute, got: {save_path}")
+
+    # Handle parent directory
     if not path.parent.exists():
-        raise ValueError(f"Parent directory does not exist: {path.parent}")
+        if create_directories:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            raise ValueError(
+                f"Parent directory does not exist: {path.parent}. "
+                f"Set create_directories=True to create it automatically."
+            )
+
+    # Warn about file overwrite
+    file_existed = path.exists()
+    existing_size = path.stat().st_size if file_existed else 0
 
     headers = _get_unsplash_headers()
 
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=60.0) as client:
+        # Increase timeout for large files (especially raw images)
+        timeout = 120.0 if size in ("raw", "full") else 60.0
+        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
             # Fetch photo metadata
             meta_resp = await client.get(
                 f"https://api.unsplash.com/photos/{photo_id}",
@@ -194,10 +210,10 @@ async def download_photo(
             path.write_bytes(img_resp.content)
 
             byte_count = len(img_resp.content)
-            return (
-                f"Downloaded photo {photo_id} ({size}) to {save_path} "
-                f"({byte_count:,} bytes)"
-            )
+            message = f"Downloaded photo {photo_id} ({size}) to {save_path} ({byte_count:,} bytes)"
+            if file_existed:
+                message += f" [overwrote existing file of {existing_size:,} bytes]"
+            return message
     except ValueError:
         raise
     except httpx.HTTPStatusError as e:
