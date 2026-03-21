@@ -173,9 +173,12 @@ async def download_photo(
                 f"Set create_directories=True to create it automatically."
             )
 
-    # Warn about file overwrite
-    file_existed = path.exists()
-    existing_size = path.stat().st_size if file_existed else 0
+    # Prevent file overwrite
+    if path.exists():
+        raise ValueError(
+            f"File already exists at {save_path}. "
+            f"Please choose a different path or delete the existing file first."
+        )
 
     headers = _get_unsplash_headers()
 
@@ -210,10 +213,7 @@ async def download_photo(
             path.write_bytes(img_resp.content)
 
             byte_count = len(img_resp.content)
-            message = f"Downloaded photo {photo_id} ({size}) to {save_path} ({byte_count:,} bytes)"
-            if file_existed:
-                message += f" [overwrote existing file of {existing_size:,} bytes]"
-            return message
+            return f"Downloaded photo {photo_id} ({size}) to {save_path} ({byte_count:,} bytes)"
     except ValueError:
         raise
     except httpx.HTTPStatusError as e:
