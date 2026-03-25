@@ -209,8 +209,15 @@ async def download_photo(
             img_resp = await client.get(image_url)
             img_resp.raise_for_status()
 
-            # Write to disk
-            path.write_bytes(img_resp.content)
+            # Write to disk atomically: fail if file already exists
+            try:
+                with path.open("xb") as f:
+                    f.write(img_resp.content)
+            except FileExistsError as e:
+                raise ValueError(
+                    f"File already exists at {save_path}. "
+                    f"Please choose a different path or delete the existing file first."
+                ) from e
 
             byte_count = len(img_resp.content)
             return f"Downloaded photo {photo_id} ({size}) to {save_path} ({byte_count:,} bytes)"

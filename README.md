@@ -88,7 +88,7 @@ Download an Unsplash photo by ID and save it to a local file. This tool fetches 
 A confirmation message containing the photo ID, size variant, save path, and file size in bytes.
 
 **Example response:**
-```
+```text
 Downloaded photo abc123 (regular) to /home/user/images/mountain.jpg (245,891 bytes)
 ```
 
@@ -96,7 +96,7 @@ Downloaded photo abc123 (regular) to /home/user/images/mountain.jpg (245,891 byt
 - The tool automatically triggers Unsplash's download tracking endpoint as required by the [Unsplash API Guidelines](https://help.unsplash.com/en/articles/2511258-guideline-triggering-a-download)
 - By default, parent directories must exist; set `create_directories=true` to create them automatically
 - The tool uses a 60-second timeout for regular downloads and 120 seconds for `raw` and `full` sizes to accommodate larger files
-- **The tool will not overwrite existing files**. If a file already exists at the specified path, an error will be raised asking you to choose a different path
+- **The tool will not overwrite existing files**. If a file already exists at the specified path, an error will be raised asking you to choose a different path or delete the existing file first
 - Downloaded images should be used in compliance with the [Unsplash License](https://unsplash.com/license)
 
 ### get_photo_attribution
