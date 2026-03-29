@@ -2,11 +2,13 @@
 #!/usr/bin/env python3
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, List, Dict, Union
 
 import httpx
+import piexif
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 
@@ -15,6 +17,74 @@ load_dotenv()
 
 UTM_PARAMS = "utm_source=unsplash_mcp&utm_medium=referral"
 VALID_IMAGE_SIZES = {"raw", "full", "regular", "small", "thumb"}
+
+# Regex to extract photo ID from filenames with the _unsplash-{id} convention
+_UNSPLASH_ID_PATTERN = re.compile(r"_unsplash-([A-Za-z0-9_-]+)$")
+
+
+def _embed_photo_id_in_path(save_path: Path, photo_id: str) -> Path:
+    """Insert the photo ID into the filename: stem_unsplash-{id}.ext"""
+    return save_path.with_name(
+        f"{save_path.stem}_unsplash-{photo_id}{save_path.suffix}"
+    )
+
+
+def _extract_photo_id_from_path(file_path: Path) -> Optional[str]:
+    """Extract photo ID from a filename containing _unsplash-{id} before the extension."""
+    match = _UNSPLASH_ID_PATTERN.search(file_path.stem)
+    if match:
+        return match.group(1)
+    return None
+
+
+_EXIF_COMMENT_PREFIX = "unsplash:photo_id="
+
+
+_EXIF_ASCII_PREFIX = b"ASCII\x00\x00\x00"
+
+
+def _inject_exif_photo_id(image_bytes: bytes, photo_id: str) -> bytes:
+    """Inject photo ID into EXIF UserComment of JPEG bytes. Non-JPEG bytes pass through unchanged."""
+    import io
+
+    if len(image_bytes) < 2 or image_bytes[0:2] != b"\xff\xd8":
+        return image_bytes
+    comment = f"{_EXIF_COMMENT_PREFIX}{photo_id}"
+    user_comment_bytes = _EXIF_ASCII_PREFIX + comment.encode("ascii")
+    try:
+        try:
+            exif_dict = piexif.load(image_bytes)
+        except Exception:
+            exif_dict = {"0th": {}, "Exif": {}, "GPS": {}, "1st": {}}
+        exif_dict["Exif"][piexif.ExifIFD.UserComment] = user_comment_bytes
+        exif_bytes = piexif.dump(exif_dict)
+        output = io.BytesIO()
+        piexif.insert(exif_bytes, image_bytes, output)
+        return output.getvalue()
+    except Exception:
+        return image_bytes
+
+
+def _extract_exif_photo_id(image_bytes: bytes) -> Optional[str]:
+    """Extract photo ID from EXIF UserComment. Returns None if not present or not JPEG."""
+    if len(image_bytes) < 2 or image_bytes[0:2] != b"\xff\xd8":
+        return None
+    try:
+        exif_dict = piexif.load(image_bytes)
+        raw_comment = exif_dict.get("Exif", {}).get(piexif.ExifIFD.UserComment)
+        if not raw_comment:
+            return None
+        # Strip the 8-byte charset prefix (e.g. "ASCII\x00\x00\x00")
+        if len(raw_comment) > 8:
+            comment = raw_comment[8:].decode("ascii", errors="replace")
+        else:
+            return None
+        if comment.startswith(_EXIF_COMMENT_PREFIX):
+            return comment[len(_EXIF_COMMENT_PREFIX) :]
+    except Exception:
+        pass
+    return None
+
 
 # Create an MCP server
 mcp = FastMCP("Unsplash MCP Server")
@@ -55,16 +125,16 @@ class PhotoAttribution:
 
 @mcp.tool()
 async def search_photos(
-        query: str,
-        page: Union[int, str] = 1,
-        per_page: Union[int, str] = 10,
-        order_by: str = "relevant",
-        color: Optional[str] = None,
-        orientation: Optional[str] = None
+    query: str,
+    page: Union[int, str] = 1,
+    per_page: Union[int, str] = 10,
+    order_by: str = "relevant",
+    color: Optional[str] = None,
+    orientation: Optional[str] = None,
 ) -> List[UnsplashPhoto]:
     """
     Search for Unsplash photos
-    
+
     Args:
         query: Search keyword
         page: Page number (1-based)
@@ -72,7 +142,7 @@ async def search_photos(
         order_by: Sort method (relevant or latest)
         color: Color filter (black_and_white, black, white, yellow, orange, red, purple, magenta, green, teal, blue)
         orientation: Orientation filter (landscape, portrait, squarish)
-    
+
     Returns:
         List[UnsplashPhoto]: List of search results containing photo objects with the following properties:
             - id: Unique identifier for the photo
@@ -110,9 +180,7 @@ async def search_photos(
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                "https://api.unsplash.com/search/photos",
-                params=params,
-                headers=headers
+                "https://api.unsplash.com/search/photos", params=params, headers=headers
             )
             response.raise_for_status()
             data = response.json()
@@ -123,7 +191,7 @@ async def search_photos(
                     description=photo.get("description"),
                     urls=photo["urls"],
                     width=photo["width"],
-                    height=photo["height"]
+                    height=photo["height"],
                 )
                 for photo in data["results"]
             ]
@@ -141,6 +209,7 @@ async def download_photo(
     save_path: str,
     size: str = "regular",
     create_directories: bool = False,
+    embed_photo_id: bool = True,
 ) -> str:
     """
     Download an Unsplash photo by ID and save it to a local file.
@@ -150,6 +219,9 @@ async def download_photo(
         save_path: Absolute file path where the image will be saved
         size: Image size variant (raw, full, regular, small, thumb)
         create_directories: If True, create parent directories if they don't exist
+        embed_photo_id: If True (default), the photo ID is embedded in the filename
+                        (e.g., mountain.jpg becomes mountain_unsplash-abc123.jpg).
+                        This allows recovering the photo ID from the file later.
 
     Returns:
         str: Confirmation message with photo ID, size, path, and byte count
@@ -162,6 +234,9 @@ async def download_photo(
     path = Path(save_path)
     if not path.is_absolute():
         raise ValueError(f"save_path must be absolute, got: {save_path}")
+
+    if embed_photo_id:
+        path = _embed_photo_id_in_path(path, photo_id)
 
     # Handle parent directory
     if not path.parent.exists():
@@ -176,7 +251,7 @@ async def download_photo(
     # Prevent file overwrite
     if path.exists():
         raise ValueError(
-            f"File already exists at {save_path}. "
+            f"File already exists at {path}. "
             f"Please choose a different path or delete the existing file first."
         )
 
@@ -209,18 +284,23 @@ async def download_photo(
             img_resp = await client.get(image_url)
             img_resp.raise_for_status()
 
+            # Inject photo ID into EXIF metadata (JPEG only, no quality loss)
+            image_data = _inject_exif_photo_id(img_resp.content, photo_id)
+
             # Write to disk atomically: fail if file already exists
             try:
                 with path.open("xb") as f:
-                    f.write(img_resp.content)
+                    f.write(image_data)
             except FileExistsError as e:
                 raise ValueError(
-                    f"File already exists at {save_path}. "
+                    f"File already exists at {path}. "
                     f"Please choose a different path or delete the existing file first."
                 ) from e
 
-            byte_count = len(img_resp.content)
-            return f"Downloaded photo {photo_id} ({size}) to {save_path} ({byte_count:,} bytes)"
+            byte_count = len(image_data)
+            return (
+                f"Downloaded photo {photo_id} ({size}) to {path} ({byte_count:,} bytes)"
+            )
     except ValueError:
         raise
     except httpx.HTTPStatusError as e:
@@ -229,15 +309,12 @@ async def download_photo(
             f"{e.response.status_code} - {e.response.text}"
         ) from e
     except Exception as e:
-        raise RuntimeError(
-            f"Failed to download photo {photo_id}: {e}"
-        ) from e
+        raise RuntimeError(f"Failed to download photo {photo_id}: {e}") from e
 
 
 @mcp.tool()
 async def get_photo_attribution(
-        photo_id: str,
-        image_size: str = "regular"
+    photo_id: str, image_size: str = "regular"
 ) -> PhotoAttribution:
     """
     Get attribution information for an Unsplash photo.
@@ -273,8 +350,7 @@ async def get_photo_attribution(
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"https://api.unsplash.com/photos/{photo_id}",
-                headers=headers
+                f"https://api.unsplash.com/photos/{photo_id}", headers=headers
             )
             response.raise_for_status()
             data = response.json()
@@ -314,7 +390,7 @@ async def get_photo_attribution(
                 photographer_name=photographer_name,
                 photographer_url=photographer_url,
                 urls=urls,
-                attribution_markdown=attribution_markdown
+                attribution_markdown=attribution_markdown,
             )
     except httpx.HTTPStatusError as e:
         print(f"HTTP error: {e.response.status_code} - {e.response.text}")
@@ -324,16 +400,75 @@ async def get_photo_attribution(
         raise
 
 
+@mcp.tool()
+async def get_photo_id_from_filename(
+    file_path: str,
+) -> str:
+    """
+    Extract the Unsplash photo ID from a filename that was saved with embed_photo_id=True.
+
+    Looks for the _unsplash-{id} pattern in the filename. For example,
+    'mountain_unsplash-abc123.jpg' yields photo ID 'abc123'.
+
+    Args:
+        file_path: Path to the downloaded image file
+
+    Returns:
+        str: The extracted Unsplash photo ID
+    """
+    p = Path(file_path)
+    if not p.is_file():
+        raise ValueError(f"File does not exist or is not a file: {file_path}")
+
+    photo_id = _extract_photo_id_from_path(p)
+    if photo_id is None:
+        raise ValueError(
+            f"No Unsplash photo ID found in filename '{p.name}'. "
+            f"The file may not have been downloaded with embed_photo_id=True."
+        )
+    return photo_id
+
+
+@mcp.tool()
+async def get_photo_id_from_exif(
+    file_path: str,
+) -> str:
+    """
+    Extract the Unsplash photo ID from a file's EXIF metadata.
+
+    Reads the EXIF UserComment field for a photo ID stored during download.
+    Only works with JPEG files that were downloaded with this server.
+
+    Args:
+        file_path: Path to the downloaded image file
+
+    Returns:
+        str: The extracted Unsplash photo ID
+    """
+    p = Path(file_path)
+    if not p.is_file():
+        raise ValueError(f"File does not exist or is not a file: {file_path}")
+
+    image_bytes = p.read_bytes()
+    photo_id = _extract_exif_photo_id(image_bytes)
+    if photo_id is None:
+        raise ValueError(
+            f"No Unsplash photo ID found in EXIF metadata for '{p.name}'. "
+            f"The file may not be a JPEG or may not have been downloaded with this server."
+        )
+    return photo_id
+
+
 def main():
     """Entry point for uvx remote execution."""
     import sys
     import io
 
     # Ensure UTF-8 encoding for stdout/stderr
-    if sys.stdout.encoding != 'utf-8':
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    if sys.stderr.encoding != 'utf-8':
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    if sys.stdout.encoding != "utf-8":
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    if sys.stderr.encoding != "utf-8":
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
     mcp.run()
 
