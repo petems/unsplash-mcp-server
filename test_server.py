@@ -106,7 +106,7 @@ class TestGetPhotoIdFromFilename:
     async def test_file_not_found(self):
         from server import get_photo_id_from_filename
 
-        with pytest.raises(ValueError, match="File does not exist"):
+        with pytest.raises(ValueError, match="File does not exist or is not a file"):
             await get_photo_id_from_filename("/tmp/nonexistent_file_12345.jpg")
 
 
@@ -200,5 +200,5 @@ class TestGetPhotoIdFromExif:
     async def test_file_not_found(self):
         from server import get_photo_id_from_exif
 
-        with pytest.raises(ValueError, match="File does not exist"):
+        with pytest.raises(ValueError, match="File does not exist or is not a file"):
             await get_photo_id_from_exif("/tmp/nonexistent_file_12345.jpg")

@@ -417,8 +417,8 @@ async def get_photo_id_from_filename(
         str: The extracted Unsplash photo ID
     """
     p = Path(file_path)
-    if not p.exists():
-        raise ValueError(f"File does not exist: {file_path}")
+    if not p.is_file():
+        raise ValueError(f"File does not exist or is not a file: {file_path}")
 
     photo_id = _extract_photo_id_from_path(p)
     if photo_id is None:
@@ -446,8 +446,8 @@ async def get_photo_id_from_exif(
         str: The extracted Unsplash photo ID
     """
     p = Path(file_path)
-    if not p.exists():
-        raise ValueError(f"File does not exist: {file_path}")
+    if not p.is_file():
+        raise ValueError(f"File does not exist or is not a file: {file_path}")
 
     image_bytes = p.read_bytes()
     photo_id = _extract_exif_photo_id(image_bytes)
