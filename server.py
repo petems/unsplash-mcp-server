@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Union
 
 import httpx
+import piexif
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 
@@ -33,6 +34,55 @@ def _extract_photo_id_from_path(file_path: Path) -> Optional[str]:
     match = _UNSPLASH_ID_PATTERN.search(file_path.stem)
     if match:
         return match.group(1)
+    return None
+
+
+_EXIF_COMMENT_PREFIX = "unsplash:photo_id="
+
+
+_EXIF_ASCII_PREFIX = b"ASCII\x00\x00\x00"
+
+
+def _inject_exif_photo_id(image_bytes: bytes, photo_id: str) -> bytes:
+    """Inject photo ID into EXIF UserComment of JPEG bytes. Non-JPEG bytes pass through unchanged."""
+    import io
+
+    if len(image_bytes) < 2 or image_bytes[0:2] != b"\xff\xd8":
+        return image_bytes
+    comment = f"{_EXIF_COMMENT_PREFIX}{photo_id}"
+    user_comment_bytes = _EXIF_ASCII_PREFIX + comment.encode("ascii")
+    try:
+        try:
+            exif_dict = piexif.load(image_bytes)
+        except Exception:
+            exif_dict = {"0th": {}, "Exif": {}, "GPS": {}, "1st": {}}
+        exif_dict["Exif"][piexif.ExifIFD.UserComment] = user_comment_bytes
+        exif_bytes = piexif.dump(exif_dict)
+        output = io.BytesIO()
+        piexif.insert(exif_bytes, image_bytes, output)
+        return output.getvalue()
+    except Exception:
+        return image_bytes
+
+
+def _extract_exif_photo_id(image_bytes: bytes) -> Optional[str]:
+    """Extract photo ID from EXIF UserComment. Returns None if not present or not JPEG."""
+    if len(image_bytes) < 2 or image_bytes[0:2] != b"\xff\xd8":
+        return None
+    try:
+        exif_dict = piexif.load(image_bytes)
+        raw_comment = exif_dict.get("Exif", {}).get(piexif.ExifIFD.UserComment)
+        if not raw_comment:
+            return None
+        # Strip the 8-byte charset prefix (e.g. "ASCII\x00\x00\x00")
+        if len(raw_comment) > 8:
+            comment = raw_comment[8:].decode("ascii", errors="replace")
+        else:
+            return None
+        if comment.startswith(_EXIF_COMMENT_PREFIX):
+            return comment[len(_EXIF_COMMENT_PREFIX) :]
+    except Exception:
+        pass
     return None
 
 
@@ -234,17 +284,20 @@ async def download_photo(
             img_resp = await client.get(image_url)
             img_resp.raise_for_status()
 
+            # Inject photo ID into EXIF metadata (JPEG only, no quality loss)
+            image_data = _inject_exif_photo_id(img_resp.content, photo_id)
+
             # Write to disk atomically: fail if file already exists
             try:
                 with path.open("xb") as f:
-                    f.write(img_resp.content)
+                    f.write(image_data)
             except FileExistsError as e:
                 raise ValueError(
                     f"File already exists at {path}. "
                     f"Please choose a different path or delete the existing file first."
                 ) from e
 
-            byte_count = len(img_resp.content)
+            byte_count = len(image_data)
             return (
                 f"Downloaded photo {photo_id} ({size}) to {path} ({byte_count:,} bytes)"
             )
@@ -372,6 +425,36 @@ async def get_photo_id_from_filename(
         raise ValueError(
             f"No Unsplash photo ID found in filename '{p.name}'. "
             f"The file may not have been downloaded with embed_photo_id=True."
+        )
+    return photo_id
+
+
+@mcp.tool()
+async def get_photo_id_from_exif(
+    file_path: str,
+) -> str:
+    """
+    Extract the Unsplash photo ID from a file's EXIF metadata.
+
+    Reads the EXIF UserComment field for a photo ID stored during download.
+    Only works with JPEG files that were downloaded with this server.
+
+    Args:
+        file_path: Path to the downloaded image file
+
+    Returns:
+        str: The extracted Unsplash photo ID
+    """
+    p = Path(file_path)
+    if not p.exists():
+        raise ValueError(f"File does not exist: {file_path}")
+
+    image_bytes = p.read_bytes()
+    photo_id = _extract_exif_photo_id(image_bytes)
+    if photo_id is None:
+        raise ValueError(
+            f"No Unsplash photo ID found in EXIF metadata for '{p.name}'. "
+            f"The file may not be a JPEG or may not have been downloaded with this server."
         )
     return photo_id
 
