@@ -10,6 +10,10 @@ from server import (
     _extract_photo_id_from_path,
     _inject_exif_photo_id,
     _extract_exif_photo_id,
+    _validate_photo_id,
+    VALID_ORDER_BY,
+    VALID_COLORS,
+    VALID_ORIENTATIONS,
 )
 
 
@@ -202,3 +206,70 @@ class TestGetPhotoIdFromExif:
 
         with pytest.raises(ValueError, match="File does not exist or is not a file"):
             await get_photo_id_from_exif("/tmp/nonexistent_file_12345.jpg")
+
+
+class TestValidatePhotoId:
+    def test_valid_simple(self):
+        assert _validate_photo_id("abc123") == "abc123"
+
+    def test_valid_with_hyphens(self):
+        assert _validate_photo_id("Dwu85P9-SOIk") == "Dwu85P9-SOIk"
+
+    def test_valid_with_underscores(self):
+        assert _validate_photo_id("abc_123") == "abc_123"
+
+    def test_strips_whitespace(self):
+        assert _validate_photo_id("  abc123  ") == "abc123"
+
+    def test_empty_string(self):
+        with pytest.raises(ValueError, match="photo_id must not be empty"):
+            _validate_photo_id("")
+
+    def test_whitespace_only(self):
+        with pytest.raises(ValueError, match="photo_id must not be empty"):
+            _validate_photo_id("   ")
+
+    def test_path_traversal(self):
+        with pytest.raises(ValueError, match="Invalid photo_id"):
+            _validate_photo_id("../etc/passwd")
+
+    def test_special_characters(self):
+        with pytest.raises(ValueError, match="Invalid photo_id"):
+            _validate_photo_id("abc;rm -rf /")
+
+
+class TestSearchPhotosValidation:
+    @pytest.mark.anyio
+    async def test_empty_query(self):
+        from server import search_photos
+
+        with pytest.raises(ValueError, match="query must not be empty"):
+            await search_photos(query="")
+
+    @pytest.mark.anyio
+    async def test_whitespace_query(self):
+        from server import search_photos
+
+        with pytest.raises(ValueError, match="query must not be empty"):
+            await search_photos(query="   ")
+
+    @pytest.mark.anyio
+    async def test_invalid_order_by(self):
+        from server import search_photos
+
+        with pytest.raises(ValueError, match="Invalid order_by"):
+            await search_photos(query="mountain", order_by="invalid")
+
+    @pytest.mark.anyio
+    async def test_invalid_color(self):
+        from server import search_photos
+
+        with pytest.raises(ValueError, match="Invalid color"):
+            await search_photos(query="mountain", color="rainbow")
+
+    @pytest.mark.anyio
+    async def test_invalid_orientation(self):
+        from server import search_photos
+
+        with pytest.raises(ValueError, match="Invalid orientation"):
+            await search_photos(query="mountain", orientation="diagonal")

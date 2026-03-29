@@ -1,6 +1,7 @@
-# -*- coding: utf-8 -*-
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -15,8 +16,28 @@ from fastmcp import FastMCP
 # Load environment variables
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 UTM_PARAMS = "utm_source=unsplash_mcp&utm_medium=referral"
 VALID_IMAGE_SIZES = {"raw", "full", "regular", "small", "thumb"}
+VALID_ORDER_BY = {"relevant", "latest"}
+VALID_COLORS = {
+    "black_and_white",
+    "black",
+    "white",
+    "yellow",
+    "orange",
+    "red",
+    "purple",
+    "magenta",
+    "green",
+    "teal",
+    "blue",
+}
+VALID_ORIENTATIONS = {"landscape", "portrait", "squarish"}
+
+# Regex for valid Unsplash photo IDs (alphanumeric, hyphens, underscores)
+_VALID_PHOTO_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 # Regex to extract photo ID from filenames with the _unsplash-{id} convention
 _UNSPLASH_ID_PATTERN = re.compile(r"_unsplash-([A-Za-z0-9_-]+)$")
@@ -99,11 +120,27 @@ class UnsplashPhoto:
     height: int
 
 
+def _validate_photo_id(photo_id: str) -> str:
+    """Validate and return a sanitized photo ID."""
+    photo_id = photo_id.strip()
+    if not photo_id:
+        raise ValueError("photo_id must not be empty")
+    if not _VALID_PHOTO_ID_PATTERN.match(photo_id):
+        raise ValueError(
+            f"Invalid photo_id '{photo_id}'. "
+            f"Must contain only letters, numbers, hyphens, and underscores."
+        )
+    return photo_id
+
+
 def _get_unsplash_headers() -> dict[str, str]:
     """Return Unsplash API headers, raising if the key is missing."""
     access_key = os.getenv("UNSPLASH_ACCESS_KEY")
     if not access_key:
-        raise ValueError("Missing UNSPLASH_ACCESS_KEY environment variable")
+        raise ValueError(
+            "Missing UNSPLASH_ACCESS_KEY environment variable. "
+            "Get one at https://unsplash.com/developers"
+        )
     return {
         "Accept-Version": "v1",
         "Authorization": f"Client-ID {access_key}",
@@ -136,10 +173,10 @@ async def search_photos(
     Search for Unsplash photos
 
     Args:
-        query: Search keyword
+        query: Search keyword (must not be empty)
         page: Page number (1-based)
         per_page: Results per page (1-30)
-        order_by: Sort method (relevant or latest)
+        order_by: Sort method ('relevant' or 'latest')
         color: Color filter (black_and_white, black, white, yellow, orange, red, purple, magenta, green, teal, blue)
         orientation: Orientation filter (landscape, portrait, squarish)
 
@@ -151,24 +188,43 @@ async def search_photos(
             - width: Original image width in pixels
             - height: Original image height in pixels
     """
+    if not query or not query.strip():
+        raise ValueError("query must not be empty")
+
+    if order_by not in VALID_ORDER_BY:
+        raise ValueError(
+            f"Invalid order_by '{order_by}'. Must be one of: {', '.join(sorted(VALID_ORDER_BY))}"
+        )
+
+    if color is not None and color not in VALID_COLORS:
+        raise ValueError(
+            f"Invalid color '{color}'. Must be one of: {', '.join(sorted(VALID_COLORS))}"
+        )
+
+    if orientation is not None and orientation not in VALID_ORIENTATIONS:
+        raise ValueError(
+            f"Invalid orientation '{orientation}'. "
+            f"Must be one of: {', '.join(sorted(VALID_ORIENTATIONS))}"
+        )
+
     headers = _get_unsplash_headers()
 
-    # 确保page是整数类型
+    # Coerce page to integer, defaulting to 1 on invalid input
     try:
         page_int = int(page)
     except (ValueError, TypeError):
         page_int = 1
 
-    # 确保per_page是整数类型
+    # Coerce per_page to integer, defaulting to 10 on invalid input
     try:
         per_page_int = int(per_page)
     except (ValueError, TypeError):
         per_page_int = 10
 
     params = {
-        "query": query,
-        "page": page_int,
-        "per_page": min(per_page_int, 30),
+        "query": query.strip(),
+        "page": max(page_int, 1),
+        "per_page": max(1, min(per_page_int, 30)),
         "order_by": order_by,
     }
 
@@ -196,11 +252,13 @@ async def search_photos(
                 for photo in data["results"]
             ]
     except httpx.HTTPStatusError as e:
-        print(f"HTTP error: {e.response.status_code} - {e.response.text}")
-        raise
-    except Exception as e:
-        print(f"Request error: {str(e)}")
-        raise
+        logger.error("HTTP error: %s - %s", e.response.status_code, e.response.text)
+        raise ValueError(
+            f"Unsplash API error ({e.response.status_code}): {e.response.text}"
+        ) from e
+    except httpx.RequestError as e:
+        logger.error("Request error: %s", e)
+        raise RuntimeError(f"Failed to connect to Unsplash API: {e}") from e
 
 
 @mcp.tool()
@@ -226,6 +284,8 @@ async def download_photo(
     Returns:
         str: Confirmation message with photo ID, size, path, and byte count
     """
+    photo_id = _validate_photo_id(photo_id)
+
     if size not in VALID_IMAGE_SIZES:
         raise ValueError(
             f"Invalid size '{size}'. Must be one of: {', '.join(sorted(VALID_IMAGE_SIZES))}"
@@ -339,6 +399,8 @@ async def get_photo_attribution(
             - urls: Dictionary of all available image URLs by size
             - attribution_markdown: Ready-to-use Markdown attribution text
     """
+    photo_id = _validate_photo_id(photo_id)
+
     headers = _get_unsplash_headers()
 
     if image_size not in VALID_IMAGE_SIZES:
@@ -352,6 +414,8 @@ async def get_photo_attribution(
             response = await client.get(
                 f"https://api.unsplash.com/photos/{photo_id}", headers=headers
             )
+            if response.status_code == 404:
+                raise ValueError(f"Photo not found: {photo_id}")
             response.raise_for_status()
             data = response.json()
 
@@ -393,11 +457,13 @@ async def get_photo_attribution(
                 attribution_markdown=attribution_markdown,
             )
     except httpx.HTTPStatusError as e:
-        print(f"HTTP error: {e.response.status_code} - {e.response.text}")
-        raise
-    except Exception as e:
-        print(f"Request error: {str(e)}")
-        raise
+        logger.error("HTTP error: %s - %s", e.response.status_code, e.response.text)
+        raise ValueError(
+            f"Unsplash API error ({e.response.status_code}): {e.response.text}"
+        ) from e
+    except httpx.RequestError as e:
+        logger.error("Request error: %s", e)
+        raise RuntimeError(f"Failed to connect to Unsplash API: {e}") from e
 
 
 @mcp.tool()
