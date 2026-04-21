@@ -4,6 +4,7 @@
 from pathlib import Path
 
 import pytest
+from fastmcp.exceptions import ToolError
 
 from server import (
     _embed_photo_id_in_path,
@@ -99,14 +100,14 @@ class TestGetPhotoIdFromFilename:
         temp_file = tmp_path / "plain_photo.jpg"
         temp_file.touch()
 
-        with pytest.raises(ValueError, match="No Unsplash photo ID found"):
+        with pytest.raises(ToolError, match="No Unsplash photo ID found"):
             await get_photo_id_from_filename(str(temp_file))
 
     @pytest.mark.anyio
     async def test_file_not_found(self):
         from server import get_photo_id_from_filename
 
-        with pytest.raises(ValueError, match="File does not exist or is not a file"):
+        with pytest.raises(ToolError, match="File does not exist or is not a file"):
             await get_photo_id_from_filename("/tmp/nonexistent_file_12345.jpg")
 
 
@@ -193,12 +194,12 @@ class TestGetPhotoIdFromExif:
         temp_file = tmp_path / "plain.jpg"
         temp_file.write_bytes(_minimal_jpeg())
 
-        with pytest.raises(ValueError, match="No Unsplash photo ID found in EXIF"):
+        with pytest.raises(ToolError, match="No Unsplash photo ID found in EXIF"):
             await get_photo_id_from_exif(str(temp_file))
 
     @pytest.mark.anyio
     async def test_file_not_found(self):
         from server import get_photo_id_from_exif
 
-        with pytest.raises(ValueError, match="File does not exist or is not a file"):
+        with pytest.raises(ToolError, match="File does not exist or is not a file"):
             await get_photo_id_from_exif("/tmp/nonexistent_file_12345.jpg")

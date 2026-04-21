@@ -10,7 +10,8 @@ from typing import Optional, List, Dict, Union
 import httpx
 import piexif
 from dotenv import load_dotenv
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
+from fastmcp.exceptions import ToolError
 
 # Load environment variables
 load_dotenv()
@@ -103,7 +104,7 @@ def _get_unsplash_headers() -> dict[str, str]:
     """Return Unsplash API headers, raising if the key is missing."""
     access_key = os.getenv("UNSPLASH_ACCESS_KEY")
     if not access_key:
-        raise ValueError("Missing UNSPLASH_ACCESS_KEY environment variable")
+        raise ToolError("Missing UNSPLASH_ACCESS_KEY environment variable")
     return {
         "Accept-Version": "v1",
         "Authorization": f"Client-ID {access_key}",
@@ -131,6 +132,7 @@ async def search_photos(
     order_by: str = "relevant",
     color: Optional[str] = None,
     orientation: Optional[str] = None,
+    ctx: Optional[Context] = None,
 ) -> List[UnsplashPhoto]:
     """
     Search for Unsplash photos
@@ -196,11 +198,15 @@ async def search_photos(
                 for photo in data["results"]
             ]
     except httpx.HTTPStatusError as e:
-        print(f"HTTP error: {e.response.status_code} - {e.response.text}")
-        raise
+        error_msg = f"HTTP error: {e.response.status_code} - {e.response.text}"
+        if ctx:
+            await ctx.error(error_msg)
+        raise ToolError(f"HTTP error searching photos: {error_msg}") from e
     except Exception as e:
-        print(f"Request error: {str(e)}")
-        raise
+        error_msg = f"Request error: {e}"
+        if ctx:
+            await ctx.error(error_msg)
+        raise ToolError(f"Failed to search photos: {e}") from e
 
 
 @mcp.tool()
@@ -227,13 +233,13 @@ async def download_photo(
         str: Confirmation message with photo ID, size, path, and byte count
     """
     if size not in VALID_IMAGE_SIZES:
-        raise ValueError(
+        raise ToolError(
             f"Invalid size '{size}'. Must be one of: {', '.join(sorted(VALID_IMAGE_SIZES))}"
         )
 
     path = Path(save_path)
     if not path.is_absolute():
-        raise ValueError(f"save_path must be absolute, got: {save_path}")
+        raise ToolError(f"save_path must be absolute, got: {save_path}")
 
     if embed_photo_id:
         path = _embed_photo_id_in_path(path, photo_id)
@@ -243,14 +249,14 @@ async def download_photo(
         if create_directories:
             path.parent.mkdir(parents=True, exist_ok=True)
         else:
-            raise ValueError(
+            raise ToolError(
                 f"Parent directory does not exist: {path.parent}. "
                 f"Set create_directories=True to create it automatically."
             )
 
     # Prevent file overwrite
     if path.exists():
-        raise ValueError(
+        raise ToolError(
             f"File already exists at {path}. "
             f"Please choose a different path or delete the existing file first."
         )
@@ -267,7 +273,7 @@ async def download_photo(
                 headers=headers,
             )
             if meta_resp.status_code == 404:
-                raise ValueError(f"Photo not found: {photo_id}")
+                raise ToolError(f"Photo not found: {photo_id}")
             meta_resp.raise_for_status()
             photo_data = meta_resp.json()
 
@@ -292,7 +298,7 @@ async def download_photo(
                 with path.open("xb") as f:
                     f.write(image_data)
             except FileExistsError as e:
-                raise ValueError(
+                raise ToolError(
                     f"File already exists at {path}. "
                     f"Please choose a different path or delete the existing file first."
                 ) from e
@@ -301,20 +307,22 @@ async def download_photo(
             return (
                 f"Downloaded photo {photo_id} ({size}) to {path} ({byte_count:,} bytes)"
             )
-    except ValueError:
+    except ToolError:
         raise
     except httpx.HTTPStatusError as e:
-        raise RuntimeError(
+        raise ToolError(
             f"HTTP error fetching photo {photo_id}: "
             f"{e.response.status_code} - {e.response.text}"
         ) from e
     except Exception as e:
-        raise RuntimeError(f"Failed to download photo {photo_id}: {e}") from e
+        raise ToolError(f"Failed to download photo {photo_id}: {e}") from e
 
 
 @mcp.tool()
 async def get_photo_attribution(
-    photo_id: str, image_size: str = "regular"
+    photo_id: str,
+    image_size: str = "regular",
+    ctx: Optional[Context] = None,
 ) -> PhotoAttribution:
     """
     Get attribution information for an Unsplash photo.
@@ -342,7 +350,7 @@ async def get_photo_attribution(
     headers = _get_unsplash_headers()
 
     if image_size not in VALID_IMAGE_SIZES:
-        raise ValueError(
+        raise ToolError(
             f"Invalid image_size '{image_size}'. "
             f"Must be one of: {', '.join(sorted(VALID_IMAGE_SIZES))}"
         )
@@ -393,11 +401,17 @@ async def get_photo_attribution(
                 attribution_markdown=attribution_markdown,
             )
     except httpx.HTTPStatusError as e:
-        print(f"HTTP error: {e.response.status_code} - {e.response.text}")
-        raise
+        error_msg = f"HTTP error: {e.response.status_code} - {e.response.text}"
+        if ctx:
+            await ctx.error(error_msg)
+        raise ToolError(
+            f"HTTP error fetching attribution for {photo_id}: {error_msg}"
+        ) from e
     except Exception as e:
-        print(f"Request error: {str(e)}")
-        raise
+        error_msg = f"Request error: {e}"
+        if ctx:
+            await ctx.error(error_msg)
+        raise ToolError(f"Failed to fetch attribution for {photo_id}: {e}") from e
 
 
 @mcp.tool()
@@ -418,11 +432,11 @@ async def get_photo_id_from_filename(
     """
     p = Path(file_path)
     if not p.is_file():
-        raise ValueError(f"File does not exist or is not a file: {file_path}")
+        raise ToolError(f"File does not exist or is not a file: {file_path}")
 
     photo_id = _extract_photo_id_from_path(p)
     if photo_id is None:
-        raise ValueError(
+        raise ToolError(
             f"No Unsplash photo ID found in filename '{p.name}'. "
             f"The file may not have been downloaded with embed_photo_id=True."
         )
@@ -447,12 +461,12 @@ async def get_photo_id_from_exif(
     """
     p = Path(file_path)
     if not p.is_file():
-        raise ValueError(f"File does not exist or is not a file: {file_path}")
+        raise ToolError(f"File does not exist or is not a file: {file_path}")
 
     image_bytes = p.read_bytes()
     photo_id = _extract_exif_photo_id(image_bytes)
     if photo_id is None:
-        raise ValueError(
+        raise ToolError(
             f"No Unsplash photo ID found in EXIF metadata for '{p.name}'. "
             f"The file may not be a JPEG or may not have been downloaded with this server."
         )
