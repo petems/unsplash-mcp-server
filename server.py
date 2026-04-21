@@ -198,15 +198,15 @@ async def search_photos(
                 for photo in data["results"]
             ]
     except httpx.HTTPStatusError as e:
+        error_msg = f"HTTP error: {e.response.status_code} - {e.response.text}"
         if ctx:
-            await ctx.error(
-                f"HTTP error: {e.response.status_code} - {e.response.text}"
-            )
-        raise
+            await ctx.error(error_msg)
+        raise ToolError(f"HTTP error searching photos: {error_msg}") from e
     except Exception as e:
+        error_msg = f"Request error: {e}"
         if ctx:
-            await ctx.error(f"Request error: {e}")
-        raise
+            await ctx.error(error_msg)
+        raise ToolError(f"Failed to search photos: {e}") from e
 
 
 @mcp.tool()
@@ -401,15 +401,17 @@ async def get_photo_attribution(
                 attribution_markdown=attribution_markdown,
             )
     except httpx.HTTPStatusError as e:
+        error_msg = f"HTTP error: {e.response.status_code} - {e.response.text}"
         if ctx:
-            await ctx.error(
-                f"HTTP error: {e.response.status_code} - {e.response.text}"
-            )
-        raise
+            await ctx.error(error_msg)
+        raise ToolError(
+            f"HTTP error fetching attribution for {photo_id}: {error_msg}"
+        ) from e
     except Exception as e:
+        error_msg = f"Request error: {e}"
         if ctx:
-            await ctx.error(f"Request error: {e}")
-        raise
+            await ctx.error(error_msg)
+        raise ToolError(f"Failed to fetch attribution for {photo_id}: {e}") from e
 
 
 @mcp.tool()
