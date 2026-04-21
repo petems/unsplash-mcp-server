@@ -85,11 +85,17 @@ Download an Unsplash photo by ID and save it to a local file. This tool fetches 
 - `create_directories` (optional): If `true`, automatically create parent directories if they don't exist. Defaults to `false` for safety.
 
 **Returns:**
-A confirmation message containing the photo ID, size variant, save path, and file size in bytes.
+A structured result containing the photo ID, final save path, size variant, byte count, and a ready-to-use Markdown attribution line.
 
 **Example response:**
-```text
-Downloaded photo abc123 (regular) to /home/user/images/mountain.jpg (245,891 bytes)
+```json
+{
+  "photo_id": "abc123",
+  "path": "/home/user/images/mountain_unsplash-abc123.jpg",
+  "size": "regular",
+  "byte_count": 245891,
+  "attribution": "\"[A mountain landscape](https://unsplash.com/photos/abc123?utm_source=unsplash_mcp&utm_medium=referral)\" by [Jane Smith](https://unsplash.com/@janesmith?utm_source=unsplash_mcp&utm_medium=referral) on [Unsplash](https://unsplash.com?utm_source=unsplash_mcp&utm_medium=referral)"
+}
 ```
 
 **Important Notes:**
@@ -126,16 +132,17 @@ Returns properly formatted attribution for an Unsplash photo, compliant with Uns
   "image_url": "https://images.unsplash.com/photo-abc123?w=1080",
   "photographer_name": "Jane Smith",
   "photographer_url": "https://unsplash.com/@janesmith?utm_source=unsplash_mcp&utm_medium=referral",
-  "attribution_markdown": "![snow-capped mountains under orange sky](https://images.unsplash.com/photo-abc123?w=1080)\n*Photo by [Jane Smith](https://unsplash.com/@janesmith?utm_source=unsplash_mcp&utm_medium=referral) on [Unsplash](https://unsplash.com?utm_source=unsplash_mcp&utm_medium=referral)*"
+  "attribution_markdown": "\"[A mountain landscape at sunset](https://unsplash.com/photos/abc123?utm_source=unsplash_mcp&utm_medium=referral)\" by [Jane Smith](https://unsplash.com/@janesmith?utm_source=unsplash_mcp&utm_medium=referral) on [Unsplash](https://unsplash.com?utm_source=unsplash_mcp&utm_medium=referral)"
 }
 ```
 
 The `attribution_markdown` field renders as:
 
 ```markdown
-![snow-capped mountains under orange sky](https://images.unsplash.com/photo-abc123?w=1080)
-*Photo by [Jane Smith](https://unsplash.com/@janesmith?utm_source=unsplash_mcp&utm_medium=referral) on [Unsplash](https://unsplash.com?utm_source=unsplash_mcp&utm_medium=referral)*
+"[A mountain landscape at sunset](https://unsplash.com/photos/abc123?utm_source=unsplash_mcp&utm_medium=referral)" by [Jane Smith](https://unsplash.com/@janesmith?utm_source=unsplash_mcp&utm_medium=referral) on [Unsplash](https://unsplash.com?utm_source=unsplash_mcp&utm_medium=referral)
 ```
+
+The same `attribution` field is returned as part of each `search_photos` result and the `download_photo` response.
 
 ## License
 
