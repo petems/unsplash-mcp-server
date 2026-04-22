@@ -11,6 +11,8 @@ from server import (
     _extract_photo_id_from_path,
     _inject_exif_photo_id,
     _extract_exif_photo_id,
+    _build_attribution_markdown,
+    _with_utm_params,
 )
 
 
@@ -173,6 +175,120 @@ class TestExtractExifPhotoId:
 
     def test_empty_bytes(self):
         assert _extract_exif_photo_id(b"") is None
+
+
+class TestWithUtmParams:
+    def test_appends_when_no_query(self):
+        result = _with_utm_params("https://unsplash.com/photos/abc123")
+        assert result == (
+            "https://unsplash.com/photos/abc123?"
+            "utm_source=unsplash_mcp&utm_medium=referral"
+        )
+
+    def test_appends_when_existing_query(self):
+        result = _with_utm_params("https://unsplash.com/@jane?foo=bar")
+        assert result == (
+            "https://unsplash.com/@jane?foo=bar&"
+            "utm_source=unsplash_mcp&utm_medium=referral"
+        )
+
+
+class TestBuildAttributionMarkdown:
+    def test_format_and_links(self):
+        result = _build_attribution_markdown(
+            photo_id="abc123",
+            photographer_name="Jane Smith",
+            photographer_profile_url="https://unsplash.com/@janesmith",
+            description="A mountain landscape",
+            alt_description="snow-capped mountains",
+        )
+        assert result == (
+            '"[A mountain landscape]'
+            "(https://unsplash.com/photos/abc123?"
+            'utm_source=unsplash_mcp&utm_medium=referral)" '
+            "by [Jane Smith]"
+            "(https://unsplash.com/@janesmith?"
+            "utm_source=unsplash_mcp&utm_medium=referral) "
+            "on [Unsplash]"
+            "(https://unsplash.com?"
+            "utm_source=unsplash_mcp&utm_medium=referral)"
+        )
+
+    def test_falls_back_to_alt_description(self):
+        result = _build_attribution_markdown(
+            photo_id="abc123",
+            photographer_name="Jane",
+            photographer_profile_url="https://unsplash.com/@jane",
+            description=None,
+            alt_description="a cat",
+        )
+        assert '"[a cat](https://unsplash.com/photos/abc123?' in result
+
+    def test_falls_back_to_untitled(self):
+        result = _build_attribution_markdown(
+            photo_id="abc123",
+            photographer_name="Jane",
+            photographer_profile_url="https://unsplash.com/@jane",
+            description=None,
+            alt_description=None,
+        )
+        assert '"[Untitled]' in result
+
+    def test_photo_id_used_in_url(self):
+        result = _build_attribution_markdown(
+            photo_id="Dwu85P9-SOIk",
+            photographer_name="Jane",
+            photographer_profile_url="https://unsplash.com/@jane",
+        )
+        assert "https://unsplash.com/photos/Dwu85P9-SOIk?" in result
+
+    def test_newlines_in_description_flattened(self):
+        result = _build_attribution_markdown(
+            photo_id="abc123",
+            photographer_name="Jane",
+            photographer_profile_url="https://unsplash.com/@jane",
+            description="line one\nline two\r\nline three",
+        )
+        assert '"[line one line two  line three]' in result
+        assert "\n" not in result
+
+    def test_whitespace_only_description_falls_back_to_untitled(self):
+        result = _build_attribution_markdown(
+            photo_id="abc123",
+            photographer_name="Jane",
+            photographer_profile_url="https://unsplash.com/@jane",
+            description="   \n  ",
+            alt_description=None,
+        )
+        assert '"[Untitled]' in result
+
+    def test_whitespace_only_description_falls_back_to_alt_description(self):
+        result = _build_attribution_markdown(
+            photo_id="abc123",
+            photographer_name="Jane",
+            photographer_profile_url="https://unsplash.com/@jane",
+            description="   \n  ",
+            alt_description="a cat",
+        )
+        assert '"[a cat]' in result
+
+    def test_brackets_in_description_escaped(self):
+        result = _build_attribution_markdown(
+            photo_id="abc123",
+            photographer_name="Jane",
+            photographer_profile_url="https://unsplash.com/@jane",
+            description="Title with [brackets]",
+        )
+        assert r"\[brackets\]" in result
+
+    def test_brackets_in_photographer_name_escaped(self):
+        result = _build_attribution_markdown(
+            photo_id="abc123",
+            photographer_name="Jane [Doe]",
+            photographer_profile_url="https://unsplash.com/@jane",
+            description="A photo",
+        )
+        assert r"Jane \[Doe\]" in result
 
 
 class TestGetPhotoIdFromExif:

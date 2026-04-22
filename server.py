@@ -95,9 +95,20 @@ mcp = FastMCP("Unsplash MCP Server")
 class UnsplashPhoto:
     id: str
     description: Optional[str]
+    alt_description: Optional[str]
     urls: Dict[str, str]
     width: int
     height: int
+    attribution: str
+
+
+@dataclass
+class DownloadResult:
+    photo_id: str
+    path: str
+    size: str
+    byte_count: int
+    attribution: str
 
 
 def _get_unsplash_headers() -> dict[str, str]:
@@ -109,6 +120,49 @@ def _get_unsplash_headers() -> dict[str, str]:
         "Accept-Version": "v1",
         "Authorization": f"Client-ID {access_key}",
     }
+
+
+def _with_utm_params(url: str) -> str:
+    """Append the Unsplash MCP UTM params to a URL."""
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}{UTM_PARAMS}"
+
+
+def _sanitize_markdown_link_text(text: str) -> str:
+    """Flatten newlines, strip whitespace, and escape characters that would
+    break Markdown link syntax ('\\', '[', ']')."""
+    cleaned = text.replace("\r", " ").replace("\n", " ").strip()
+    return cleaned.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+
+
+def _build_attribution_markdown(
+    photo_id: str,
+    photographer_name: str,
+    photographer_profile_url: str,
+    description: Optional[str] = None,
+    alt_description: Optional[str] = None,
+) -> str:
+    """Build markdown attribution of the form:
+    "Image Name" by Accountname on Unsplash — where each of the three segments
+    is a hyperlink (image page by photo ID, photographer profile, Unsplash site).
+    """
+    photo_url = _with_utm_params(f"https://unsplash.com/photos/{photo_id}")
+    profile_url = _with_utm_params(photographer_profile_url)
+    unsplash_url = _with_utm_params("https://unsplash.com")
+    image_title = "Untitled"
+    for candidate in (description, alt_description):
+        if candidate is None:
+            continue
+        sanitized = _sanitize_markdown_link_text(candidate)
+        if sanitized:
+            image_title = sanitized
+            break
+    safe_name = _sanitize_markdown_link_text(photographer_name)
+    return (
+        f'"[{image_title}]({photo_url})" '
+        f"by [{safe_name}]({profile_url}) "
+        f"on [Unsplash]({unsplash_url})"
+    )
 
 
 @dataclass
@@ -149,9 +203,11 @@ async def search_photos(
         List[UnsplashPhoto]: List of search results containing photo objects with the following properties:
             - id: Unique identifier for the photo
             - description: Optional text description of the photo
+            - alt_description: Optional AI-generated alt text
             - urls: Dictionary of available image URLs in different sizes
             - width: Original image width in pixels
             - height: Original image height in pixels
+            - attribution: Ready-to-use Markdown attribution line
     """
     headers = _get_unsplash_headers()
 
@@ -191,9 +247,17 @@ async def search_photos(
                 UnsplashPhoto(
                     id=photo["id"],
                     description=photo.get("description"),
+                    alt_description=photo.get("alt_description"),
                     urls=photo["urls"],
                     width=photo["width"],
                     height=photo["height"],
+                    attribution=_build_attribution_markdown(
+                        photo_id=photo["id"],
+                        photographer_name=photo["user"]["name"],
+                        photographer_profile_url=photo["user"]["links"]["html"],
+                        description=photo.get("description"),
+                        alt_description=photo.get("alt_description"),
+                    ),
                 )
                 for photo in data["results"]
             ]
@@ -216,7 +280,7 @@ async def download_photo(
     size: str = "regular",
     create_directories: bool = False,
     embed_photo_id: bool = True,
-) -> str:
+) -> DownloadResult:
     """
     Download an Unsplash photo by ID and save it to a local file.
 
@@ -230,7 +294,12 @@ async def download_photo(
                         This allows recovering the photo ID from the file later.
 
     Returns:
-        str: Confirmation message with photo ID, size, path, and byte count
+        DownloadResult: Structured download result containing:
+            - photo_id: Unsplash photo ID
+            - path: Final path where the image was saved
+            - size: Size variant that was downloaded
+            - byte_count: Number of bytes written to disk
+            - attribution: Ready-to-use Markdown attribution line
     """
     if size not in VALID_IMAGE_SIZES:
         raise ToolError(
@@ -304,8 +373,19 @@ async def download_photo(
                 ) from e
 
             byte_count = len(image_data)
-            return (
-                f"Downloaded photo {photo_id} ({size}) to {path} ({byte_count:,} bytes)"
+            attribution = _build_attribution_markdown(
+                photo_id=photo_data["id"],
+                photographer_name=photo_data["user"]["name"],
+                photographer_profile_url=photo_data["user"]["links"]["html"],
+                description=photo_data.get("description"),
+                alt_description=photo_data.get("alt_description"),
+            )
+            return DownloadResult(
+                photo_id=photo_data["id"],
+                path=str(path),
+                size=size,
+                byte_count=byte_count,
+                attribution=attribution,
             )
     except ToolError:
         raise
@@ -368,25 +448,17 @@ async def get_photo_attribution(
             urls = data.get("urls", {})
             photographer_name = data["user"]["name"]
 
-            raw_photo_url = data["links"]["html"]
-            raw_profile_url = data["user"]["links"]["html"]
-
-            separator = "&" if "?" in raw_photo_url else "?"
-            photo_url = f"{raw_photo_url}{separator}{UTM_PARAMS}"
-
-            separator = "&" if "?" in raw_profile_url else "?"
-            photographer_url = f"{raw_profile_url}{separator}{UTM_PARAMS}"
-
-            unsplash_url = f"https://unsplash.com?{UTM_PARAMS}"
+            photo_url = _with_utm_params(f"https://unsplash.com/photos/{data['id']}")
+            photographer_url = _with_utm_params(data["user"]["links"]["html"])
 
             image_url = urls.get(image_size, urls.get("regular", ""))
 
-            alt_text = alt_description or description or "Unsplash photo"
-
-            attribution_markdown = (
-                f"![{alt_text}]({image_url})\n"
-                f"*Photo by [{photographer_name}]({photographer_url}) "
-                f"on [Unsplash]({unsplash_url})*"
+            attribution_markdown = _build_attribution_markdown(
+                photo_id=data["id"],
+                photographer_name=photographer_name,
+                photographer_profile_url=data["user"]["links"]["html"],
+                description=description,
+                alt_description=alt_description,
             )
 
             return PhotoAttribution(
