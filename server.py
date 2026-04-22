@@ -128,6 +128,13 @@ def _with_utm_params(url: str) -> str:
     return f"{url}{separator}{UTM_PARAMS}"
 
 
+def _sanitize_markdown_link_text(text: str) -> str:
+    """Flatten newlines, strip whitespace, and escape characters that would
+    break Markdown link syntax ('\\', '[', ']')."""
+    cleaned = text.replace("\r", " ").replace("\n", " ").strip()
+    return cleaned.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+
+
 def _build_attribution_markdown(
     photo_id: str,
     photographer_name: str,
@@ -142,10 +149,13 @@ def _build_attribution_markdown(
     photo_url = _with_utm_params(f"https://unsplash.com/photos/{photo_id}")
     profile_url = _with_utm_params(photographer_profile_url)
     unsplash_url = _with_utm_params("https://unsplash.com")
-    image_title = description or alt_description or "Untitled"
+    image_title = (
+        _sanitize_markdown_link_text(description or alt_description or "") or "Untitled"
+    )
+    safe_name = _sanitize_markdown_link_text(photographer_name)
     return (
         f'"[{image_title}]({photo_url})" '
-        f"by [{photographer_name}]({profile_url}) "
+        f"by [{safe_name}]({profile_url}) "
         f"on [Unsplash]({unsplash_url})"
     )
 
@@ -433,9 +443,7 @@ async def get_photo_attribution(
             urls = data.get("urls", {})
             photographer_name = data["user"]["name"]
 
-            photo_url = _with_utm_params(
-                f"https://unsplash.com/photos/{data['id']}"
-            )
+            photo_url = _with_utm_params(f"https://unsplash.com/photos/{data['id']}")
             photographer_url = _with_utm_params(data["user"]["links"]["html"])
 
             image_url = urls.get(image_size, urls.get("regular", ""))

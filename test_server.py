@@ -242,6 +242,44 @@ class TestBuildAttributionMarkdown:
         )
         assert "https://unsplash.com/photos/Dwu85P9-SOIk?" in result
 
+    def test_newlines_in_description_flattened(self):
+        result = _build_attribution_markdown(
+            photo_id="abc123",
+            photographer_name="Jane",
+            photographer_profile_url="https://unsplash.com/@jane",
+            description="line one\nline two\r\nline three",
+        )
+        assert '"[line one line two  line three]' in result
+        assert "\n" not in result
+
+    def test_whitespace_only_description_falls_back_to_untitled(self):
+        result = _build_attribution_markdown(
+            photo_id="abc123",
+            photographer_name="Jane",
+            photographer_profile_url="https://unsplash.com/@jane",
+            description="   \n  ",
+            alt_description=None,
+        )
+        assert '"[Untitled]' in result
+
+    def test_brackets_in_description_escaped(self):
+        result = _build_attribution_markdown(
+            photo_id="abc123",
+            photographer_name="Jane",
+            photographer_profile_url="https://unsplash.com/@jane",
+            description="Title with [brackets]",
+        )
+        assert r"\[brackets\]" in result
+
+    def test_brackets_in_photographer_name_escaped(self):
+        result = _build_attribution_markdown(
+            photo_id="abc123",
+            photographer_name="Jane [Doe]",
+            photographer_profile_url="https://unsplash.com/@jane",
+            description="A photo",
+        )
+        assert r"Jane \[Doe\]" in result
+
 
 class TestGetPhotoIdFromExif:
     @pytest.mark.anyio
