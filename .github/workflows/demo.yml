@@ -1,0 +1,32 @@
+name: Regenerate demo GIF
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "docs/demo/**"
+      - "server.py"
+
+jobs:
+  vhs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - run: uv sync --all-extras
+
+      - uses: charmbracelet/vhs-action@v1
+        with:
+          path: docs/demo/demo.tape
+          install-fonts: "true"
+
+      - uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "chore(demo): regenerate GIF"
+          file_pattern: docs/demo.gif

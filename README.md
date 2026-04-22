@@ -4,6 +4,8 @@
 
 Fork of [hellokaton/unsplash-mcp-server](https://github.com/hellokaton/unsplash-mcp-server).
 
+![Demo](docs/demo.gif)
+
 ## Overview
 
 Unsplash MCP Server provides tools for searching Unsplash's library of high-quality images. It supports filtering by keyword, color, orientation, and pagination.
@@ -143,6 +145,17 @@ The `attribution_markdown` field renders as:
 ```
 
 The same `attribution` field is returned as part of each `search_photos` result and the `download_photo` response.
+
+## Regenerating the demo GIF
+
+The animated demo at the top of this README is produced by a [VHS](https://github.com/charmbracelet/vhs) tape that exercises the MCP tools against committed fixtures (no Unsplash key required).
+
+```sh
+brew install vhs     # one-time
+make demo            # renders docs/demo.gif from docs/demo/demo.tape
+```
+
+See [`docs/demo/README.md`](docs/demo/README.md) for details.
 
 ## License
 
