@@ -31,4 +31,4 @@ Sleep 500ms
 Type "uv run python docs/demo/demo_client.py"
 Sleep 400ms
 Enter
-Sleep 12s
+Sleep 14s
