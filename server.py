@@ -149,9 +149,14 @@ def _build_attribution_markdown(
     photo_url = _with_utm_params(f"https://unsplash.com/photos/{photo_id}")
     profile_url = _with_utm_params(photographer_profile_url)
     unsplash_url = _with_utm_params("https://unsplash.com")
-    image_title = (
-        _sanitize_markdown_link_text(description or alt_description or "") or "Untitled"
-    )
+    image_title = "Untitled"
+    for candidate in (description, alt_description):
+        if candidate is None:
+            continue
+        sanitized = _sanitize_markdown_link_text(candidate)
+        if sanitized:
+            image_title = sanitized
+            break
     safe_name = _sanitize_markdown_link_text(photographer_name)
     return (
         f'"[{image_title}]({photo_url})" '

@@ -262,6 +262,16 @@ class TestBuildAttributionMarkdown:
         )
         assert '"[Untitled]' in result
 
+    def test_whitespace_only_description_falls_back_to_alt_description(self):
+        result = _build_attribution_markdown(
+            photo_id="abc123",
+            photographer_name="Jane",
+            photographer_profile_url="https://unsplash.com/@jane",
+            description="   \n  ",
+            alt_description="a cat",
+        )
+        assert '"[a cat]' in result
+
     def test_brackets_in_description_escaped(self):
         result = _build_attribution_markdown(
             photo_id="abc123",
