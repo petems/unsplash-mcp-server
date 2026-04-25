@@ -14,9 +14,6 @@ from server import (
     _build_attribution_markdown,
     _with_utm_params,
     _validate_photo_id,
-    VALID_ORDER_BY,
-    VALID_COLORS,
-    VALID_ORIENTATIONS,
 )
 
 

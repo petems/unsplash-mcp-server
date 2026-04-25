@@ -284,7 +284,7 @@ async def search_photos(
     except (ValueError, TypeError):
         per_page_int = 10
 
-    params = {
+    params: dict[str, str | int] = {
         "query": query,
         "page": max(page_int, 1),
         "per_page": max(1, min(per_page_int, 30)),
