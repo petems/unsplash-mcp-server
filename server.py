@@ -544,6 +544,8 @@ async def get_photo_attribution(
         raise ToolError(
             f"HTTP error fetching attribution for {photo_id}: {error_msg}"
         ) from e
+    except ToolError:
+        raise
     except Exception as e:
         error_msg = f"Request error: {e}"
         logger.error("get_photo_attribution: %s", error_msg)
