@@ -136,9 +136,9 @@ def _validate_photo_id(photo_id: str) -> str:
     """Validate and return a sanitized photo ID."""
     photo_id = photo_id.strip()
     if not photo_id:
-        raise ValueError("photo_id must not be empty")
+        raise ToolError("photo_id must not be empty")
     if not _VALID_PHOTO_ID_PATTERN.match(photo_id):
-        raise ValueError(
+        raise ToolError(
             f"Invalid photo_id '{photo_id}'. "
             f"Must contain only letters, numbers, hyphens, and underscores."
         )
@@ -247,20 +247,20 @@ async def search_photos(
             - attribution: Ready-to-use Markdown attribution line
     """
     if not query or not query.strip():
-        raise ValueError("query must not be empty")
+        raise ToolError("query must not be empty")
 
     if order_by not in VALID_ORDER_BY:
-        raise ValueError(
+        raise ToolError(
             f"Invalid order_by '{order_by}'. Must be one of: {', '.join(sorted(VALID_ORDER_BY))}"
         )
 
     if color is not None and color not in VALID_COLORS:
-        raise ValueError(
+        raise ToolError(
             f"Invalid color '{color}'. Must be one of: {', '.join(sorted(VALID_COLORS))}"
         )
 
     if orientation is not None and orientation not in VALID_ORIENTATIONS:
-        raise ValueError(
+        raise ToolError(
             f"Invalid orientation '{orientation}'. "
             f"Must be one of: {', '.join(sorted(VALID_ORIENTATIONS))}"
         )
@@ -503,7 +503,7 @@ async def get_photo_attribution(
                 f"https://api.unsplash.com/photos/{photo_id}", headers=headers
             )
             if response.status_code == 404:
-                raise ValueError(f"Photo not found: {photo_id}")
+                raise ToolError(f"Photo not found: {photo_id}")
             response.raise_for_status()
             data = response.json()
 
