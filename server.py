@@ -1,6 +1,7 @@
-# -*- coding: utf-8 -*-
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -16,8 +17,28 @@ from fastmcp.exceptions import ToolError
 # Load environment variables
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 UTM_PARAMS = "utm_source=unsplash_mcp&utm_medium=referral"
 VALID_IMAGE_SIZES = {"raw", "full", "regular", "small", "thumb"}
+VALID_ORDER_BY = {"relevant", "latest"}
+VALID_COLORS = {
+    "black_and_white",
+    "black",
+    "white",
+    "yellow",
+    "orange",
+    "red",
+    "purple",
+    "magenta",
+    "green",
+    "teal",
+    "blue",
+}
+VALID_ORIENTATIONS = {"landscape", "portrait", "squarish"}
+
+# Regex for valid Unsplash photo IDs (alphanumeric, hyphens, underscores)
+_VALID_PHOTO_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 # Regex to extract photo ID from filenames with the _unsplash-{id} convention
 _UNSPLASH_ID_PATTERN = re.compile(r"_unsplash-([A-Za-z0-9_-]+)$")
@@ -111,11 +132,29 @@ class DownloadResult:
     attribution: str
 
 
+def _validate_photo_id(photo_id: str) -> str:
+    """Validate and return a sanitized photo ID."""
+    if not isinstance(photo_id, str):
+        raise ToolError("photo_id must be a string")
+    photo_id = photo_id.strip()
+    if not photo_id:
+        raise ToolError("photo_id must not be empty")
+    if not _VALID_PHOTO_ID_PATTERN.match(photo_id):
+        raise ToolError(
+            f"Invalid photo_id '{photo_id}'. "
+            f"Must contain only letters, numbers, hyphens, and underscores."
+        )
+    return photo_id
+
+
 def _get_unsplash_headers() -> dict[str, str]:
     """Return Unsplash API headers, raising if the key is missing."""
     access_key = os.getenv("UNSPLASH_ACCESS_KEY")
     if not access_key:
-        raise ToolError("Missing UNSPLASH_ACCESS_KEY environment variable")
+        raise ToolError(
+            "Missing UNSPLASH_ACCESS_KEY environment variable. "
+            "Get one at https://unsplash.com/developers"
+        )
     return {
         "Accept-Version": "v1",
         "Authorization": f"Client-ID {access_key}",
@@ -192,10 +231,10 @@ async def search_photos(
     Search for Unsplash photos
 
     Args:
-        query: Search keyword
+        query: Search keyword (must not be empty)
         page: Page number (1-based)
         per_page: Results per page (1-30)
-        order_by: Sort method (relevant or latest)
+        order_by: Sort method ('relevant' or 'latest')
         color: Color filter (black_and_white, black, white, yellow, orange, red, purple, magenta, green, teal, blue)
         orientation: Orientation filter (landscape, portrait, squarish)
 
@@ -209,24 +248,46 @@ async def search_photos(
             - height: Original image height in pixels
             - attribution: Ready-to-use Markdown attribution line
     """
+    if not isinstance(query, str):
+        raise ToolError("query must be a string")
+    query = query.strip()
+    if not query:
+        raise ToolError("query must not be empty")
+
+    if not isinstance(order_by, str) or order_by not in VALID_ORDER_BY:
+        raise ToolError(
+            f"Invalid order_by '{order_by}'. Must be one of: {', '.join(sorted(VALID_ORDER_BY))}"
+        )
+
+    if color is not None and (not isinstance(color, str) or color not in VALID_COLORS):
+        raise ToolError(
+            f"Invalid color '{color}'. Must be one of: {', '.join(sorted(VALID_COLORS))}"
+        )
+
+    if orientation is not None and (not isinstance(orientation, str) or orientation not in VALID_ORIENTATIONS):
+        raise ToolError(
+            f"Invalid orientation '{orientation}'. "
+            f"Must be one of: {', '.join(sorted(VALID_ORIENTATIONS))}"
+        )
+
     headers = _get_unsplash_headers()
 
-    # 确保page是整数类型
+    # Coerce page to integer, defaulting to 1 on invalid input
     try:
         page_int = int(page)
     except (ValueError, TypeError):
         page_int = 1
 
-    # 确保per_page是整数类型
+    # Coerce per_page to integer, defaulting to 10 on invalid input
     try:
         per_page_int = int(per_page)
     except (ValueError, TypeError):
         per_page_int = 10
 
-    params = {
+    params: dict[str, str | int] = {
         "query": query,
-        "page": page_int,
-        "per_page": min(per_page_int, 30),
+        "page": max(page_int, 1),
+        "per_page": max(1, min(per_page_int, 30)),
         "order_by": order_by,
     }
 
@@ -263,11 +324,13 @@ async def search_photos(
             ]
     except httpx.HTTPStatusError as e:
         error_msg = f"HTTP error: {e.response.status_code} - {e.response.text}"
+        logger.error("search_photos: %s", error_msg)
         if ctx:
             await ctx.error(error_msg)
         raise ToolError(f"HTTP error searching photos: {error_msg}") from e
     except Exception as e:
         error_msg = f"Request error: {e}"
+        logger.error("search_photos: %s", error_msg)
         if ctx:
             await ctx.error(error_msg)
         raise ToolError(f"Failed to search photos: {e}") from e
@@ -301,6 +364,8 @@ async def download_photo(
             - byte_count: Number of bytes written to disk
             - attribution: Ready-to-use Markdown attribution line
     """
+    photo_id = _validate_photo_id(photo_id)
+
     if size not in VALID_IMAGE_SIZES:
         raise ToolError(
             f"Invalid size '{size}'. Must be one of: {', '.join(sorted(VALID_IMAGE_SIZES))}"
@@ -427,6 +492,8 @@ async def get_photo_attribution(
             - urls: Dictionary of all available image URLs by size
             - attribution_markdown: Ready-to-use Markdown attribution text
     """
+    photo_id = _validate_photo_id(photo_id)
+
     headers = _get_unsplash_headers()
 
     if image_size not in VALID_IMAGE_SIZES:
@@ -440,6 +507,8 @@ async def get_photo_attribution(
             response = await client.get(
                 f"https://api.unsplash.com/photos/{photo_id}", headers=headers
             )
+            if response.status_code == 404:
+                raise ToolError(f"Photo not found: {photo_id}")
             response.raise_for_status()
             data = response.json()
 
@@ -474,13 +543,17 @@ async def get_photo_attribution(
             )
     except httpx.HTTPStatusError as e:
         error_msg = f"HTTP error: {e.response.status_code} - {e.response.text}"
+        logger.error("get_photo_attribution: %s", error_msg)
         if ctx:
             await ctx.error(error_msg)
         raise ToolError(
             f"HTTP error fetching attribution for {photo_id}: {error_msg}"
         ) from e
+    except ToolError:
+        raise
     except Exception as e:
         error_msg = f"Request error: {e}"
+        logger.error("get_photo_attribution: %s", error_msg)
         if ctx:
             await ctx.error(error_msg)
         raise ToolError(f"Failed to fetch attribution for {photo_id}: {e}") from e
