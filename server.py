@@ -134,6 +134,8 @@ class DownloadResult:
 
 def _validate_photo_id(photo_id: str) -> str:
     """Validate and return a sanitized photo ID."""
+    if not isinstance(photo_id, str):
+        raise ToolError("photo_id must be a string")
     photo_id = photo_id.strip()
     if not photo_id:
         raise ToolError("photo_id must not be empty")
@@ -246,7 +248,10 @@ async def search_photos(
             - height: Original image height in pixels
             - attribution: Ready-to-use Markdown attribution line
     """
-    if not query or not query.strip():
+    if not isinstance(query, str):
+        raise ToolError("query must be a string")
+    query = query.strip()
+    if not query:
         raise ToolError("query must not be empty")
 
     if order_by not in VALID_ORDER_BY:
@@ -280,7 +285,7 @@ async def search_photos(
         per_page_int = 10
 
     params = {
-        "query": query.strip(),
+        "query": query,
         "page": max(page_int, 1),
         "per_page": max(1, min(per_page_int, 30)),
         "order_by": order_by,
