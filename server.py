@@ -254,17 +254,17 @@ async def search_photos(
     if not query:
         raise ToolError("query must not be empty")
 
-    if order_by not in VALID_ORDER_BY:
+    if not isinstance(order_by, str) or order_by not in VALID_ORDER_BY:
         raise ToolError(
             f"Invalid order_by '{order_by}'. Must be one of: {', '.join(sorted(VALID_ORDER_BY))}"
         )
 
-    if color is not None and color not in VALID_COLORS:
+    if color is not None and (not isinstance(color, str) or color not in VALID_COLORS):
         raise ToolError(
             f"Invalid color '{color}'. Must be one of: {', '.join(sorted(VALID_COLORS))}"
         )
 
-    if orientation is not None and orientation not in VALID_ORIENTATIONS:
+    if orientation is not None and (not isinstance(orientation, str) or orientation not in VALID_ORIENTATIONS):
         raise ToolError(
             f"Invalid orientation '{orientation}'. "
             f"Must be one of: {', '.join(sorted(VALID_ORIENTATIONS))}"
